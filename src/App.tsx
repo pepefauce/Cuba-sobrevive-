@@ -1,101 +1,332 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 
-const WORLD_SIZE = 180;
-
-type Stick = { active: boolean; x: number; y: number };
+const WORLD_HALF = 90;
+const PLAYER_RADIUS = 1.4;
 
 export default function App() {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const stickRef = useRef<Stick>({ active: false, x: 0, y: 0 });
-  const lookRef = useRef({ active: false, id: -1, x: 0 });
-  const playerRef = useRef({ x: 0, z: 18, angle: Math.PI });
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const controlsRef = useRef({ moveX: 0, moveY: 0, run: false, lookActive: false, lookId: -1, lookX: 0 });
+  const worldRef = useRef({ x: 0, z: 12, yaw: Math.PI });
   const [health, setHealth] = useState(100);
-  const [message, setMessage] = useState('Explora el pueblo');
-  const [running, setRunning] = useState(false);
+  const [ammo, setAmmo] = useState(18);
+  const [objective, setObjective] = useState('Explora el pueblo');
+  const [moveKnob, setMoveKnob] = useState({ x: 0, y: 0 });
+  const [run, setRun] = useState(false);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#8bb9b1');
-    scene.fog = new THREE.Fog('#8bb9b1', 55, 170);
 
-    const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 300);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#8eb3b0');
+    scene.fog = new THREE.Fog('#8eb3b0', 40, 190);
+
+    const camera = new THREE.PerspectiveCamera(56, 1, 0.1, 500);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mount.appendChild(renderer.domElement);
 
-    scene.add(new THREE.HemisphereLight('#d9f4e7', '#44382c', 2.2));
-    const sun = new THREE.DirectionalLight('#ffe0a3', 3.2);
-    sun.position.set(-45, 80, 30); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); scene.add(sun);
+    const hemi = new THREE.HemisphereLight('#d9f3eb', '#4b3a2d', 2.2);
+    scene.add(hemi);
 
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE), new THREE.MeshStandardMaterial({ color: '#71895d', roughness: 1 }));
-    ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+    const sun = new THREE.DirectionalLight('#ffd79d', 2.8);
+    sun.position.set(-30, 60, 20);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    scene.add(sun);
 
-    const roadMaterial = new THREE.MeshStandardMaterial({ color: '#a89577', roughness: 1 });
-    [[0, 0, 18, WORLD_SIZE], [0, 0, WORLD_SIZE, 18], [-48, 0, 14, WORLD_SIZE], [48, 0, 14, WORLD_SIZE]].forEach(([x, y, w, d]) => {
-      const road = new THREE.Mesh(new THREE.BoxGeometry(w, .08, d), roadMaterial); road.position.set(x, .03, y); road.receiveShadow = true; scene.add(road);
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(WORLD_HALF * 2, WORLD_HALF * 2),
+      new THREE.MeshStandardMaterial({ color: '#6c865e', roughness: 1 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const roadMaterial = new THREE.MeshStandardMaterial({ color: '#a79172', roughness: 1 });
+    const roads = [
+      { x: 0, z: 0, w: 18, d: WORLD_HALF * 2 },
+      { x: 0, z: 0, w: WORLD_HALF * 2, d: 18 },
+      { x: -44, z: 0, w: 14, d: WORLD_HALF * 2 },
+      { x: 44, z: 0, w: 14, d: WORLD_HALF * 2 },
+    ];
+    roads.forEach(({ x, z, w, d }) => {
+      const road = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, d), roadMaterial);
+      road.position.set(x, 0.02, z);
+      road.receiveShadow = true;
+      scene.add(road);
     });
 
-    const colliders: THREE.Box3[] = [];
-    const house = (x: number, z: number, w: number, d: number, color: string) => {
+    const obstacles: Array<{ center: THREE.Vector3; size: THREE.Vector3 }> = [];
+    const addHouse = (x: number, z: number, w: number, d: number, color: string) => {
       const group = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, 7, d), new THREE.MeshStandardMaterial({ color, roughness: .9 }));
-      body.position.y = 3.5; body.castShadow = true; body.receiveShadow = true; group.add(body);
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * .72, 3.2, 4), new THREE.MeshStandardMaterial({ color: '#75483c', roughness: 1 }));
-      roof.rotation.y = Math.PI / 4; roof.position.y = 8.6; roof.scale.set(w / Math.max(w, d), 1, d / Math.max(w, d)); roof.castShadow = true; group.add(roof);
-      group.position.set(x, 0, z); scene.add(group); colliders.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, 3.5, z), new THREE.Vector3(w + 2, 7, d + 2)));
+      const base = new THREE.Mesh(
+        new THREE.BoxGeometry(w, 7, d),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.9 })
+      );
+      base.position.y = 3.5;
+      base.castShadow = true;
+      base.receiveShadow = true;
+      group.add(base);
+
+      const roof = new THREE.Mesh(
+        new THREE.ConeGeometry(Math.max(w, d) * 0.72, 3.5, 4),
+        new THREE.MeshStandardMaterial({ color: '#7a4d40', roughness: 1 })
+      );
+      roof.position.y = 8.4;
+      roof.rotation.y = Math.PI / 4;
+      roof.castShadow = true;
+      group.add(roof);
+
+      group.position.set(x, 0, z);
+      scene.add(group);
+      obstacles.push({ center: new THREE.Vector3(x, 0, z), size: new THREE.Vector3(w + 2, 7, d + 2) });
     };
-    [[-28, -35, 17, 13, '#d49b63'], [27, -35, 16, 14, '#bd7655'], [-30, 34, 18, 13, '#d9b56d'], [29, 34, 15, 16, '#c57b58'], [-70, -15, 13, 17, '#b7684d'], [70, 16, 15, 13, '#d49a59'], [-69, 55, 18, 14, '#c9875b'], [66, -58, 19, 15, '#d1a262']].forEach((v) => house(...(v as [number, number, number, number, string])));
 
-    const tree = (x: number, z: number) => {
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.7, 1, 5, 8), new THREE.MeshStandardMaterial({ color: '#684735' }));
-      trunk.position.set(x, 2.5, z); trunk.castShadow = true; scene.add(trunk);
-      const crown = new THREE.Mesh(new THREE.SphereGeometry(4.5, 10, 8), new THREE.MeshStandardMaterial({ color: '#39704e', roughness: 1 }));
-      crown.position.set(x, 7, z); crown.castShadow = true; scene.add(crown);
+    [
+      [-30, -34, 18, 14, '#d7a66b'],
+      [30, -36, 16, 14, '#b86f58'],
+      [-30, 34, 18, 16, '#d0ad59'],
+      [30, 34, 18, 15, '#c67d5f'],
+      [-70, -10, 15, 18, '#a8674f'],
+      [66, 14, 18, 15, '#d7a668'],
+      [-67, 54, 18, 14, '#c7875e'],
+      [66, -58, 18, 16, '#d6b066'],
+    ].forEach((v) => addHouse(v[0], v[1], v[2], v[3], v[4] as string));
+
+    const addTree = (x: number, z: number) => {
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.7, 0.95, 5, 8),
+        new THREE.MeshStandardMaterial({ color: '#6d4d36', roughness: 1 })
+      );
+      trunk.position.set(x, 2.5, z);
+      trunk.castShadow = true;
+      scene.add(trunk);
+
+      const crown = new THREE.Mesh(
+        new THREE.SphereGeometry(4.2, 12, 10),
+        new THREE.MeshStandardMaterial({ color: '#3a7d4d', roughness: 1 })
+      );
+      crown.position.set(x, 7, z);
+      crown.castShadow = true;
+      scene.add(crown);
     };
-    [[-52,-12],[-53,9],[52,8],[54,-11],[-9,-47],[10,-47],[-10,47],[12,47],[-76,-45],[76,45]].forEach(([x,z]) => tree(x,z));
 
-    const player = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(1.25, 2.8, 6, 10), new THREE.MeshStandardMaterial({ color: '#286b72' }));
-    body.position.y = 2.5; body.castShadow = true; player.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(1.05, 12, 8), new THREE.MeshStandardMaterial({ color: '#b87450' }));
-    head.position.y = 5.1; head.castShadow = true; player.add(head);
-    const pack = new THREE.Mesh(new THREE.BoxGeometry(1.7, 2, .7), new THREE.MeshStandardMaterial({ color: '#343f3c' }));
-    pack.position.set(0, 2.8, .9); pack.castShadow = true; player.add(pack);
-    scene.add(player);
+    [
+      [-52, -12], [-52, 10], [52, 12], [54, -10],
+      [-8, -48], [8, -48], [-8, 48], [8, 48],
+      [-78, -44], [76, 46]
+    ].forEach(([x, z]) => addTree(x, z));
 
-    const resize = () => { const w = mount.clientWidth; const h = mount.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); };
-    const blocked = (x: number, z: number) => colliders.some((box) => box.distanceToPoint(new THREE.Vector3(x, 1, z)) < 1.4);
-    const updateJoystick = (event: React.PointerEvent) => {
-      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-      const dx = event.clientX - (rect.left + rect.width / 2); const dy = event.clientY - (rect.top + rect.height / 2); const length = Math.min(1, Math.hypot(dx, dy) / (rect.width * .42)); const angle = Math.atan2(dy, dx);
-      stickRef.current = { active: true, x: Math.cos(angle) * length, y: Math.sin(angle) * length };
+    const playerMesh = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.CapsuleGeometry(1.2, 2.6, 6, 12),
+      new THREE.MeshStandardMaterial({ color: '#234c5d', roughness: 0.8 })
+    );
+    body.position.y = 2.2;
+    body.castShadow = true;
+    playerMesh.add(body);
+
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.95, 18, 14),
+      new THREE.MeshStandardMaterial({ color: '#d49d74', roughness: 1 })
+    );
+    head.position.y = 4.8;
+    head.castShadow = true;
+    playerMesh.add(head);
+
+    const pack = new THREE.Mesh(
+      new THREE.BoxGeometry(1.4, 1.9, 0.7),
+      new THREE.MeshStandardMaterial({ color: '#2a3740', roughness: 1 })
+    );
+    pack.position.set(0, 2.9, 0.9);
+    pack.castShadow = true;
+    playerMesh.add(pack);
+    scene.add(playerMesh);
+
+    const isBlocked = (x: number, z: number) => {
+      for (const obstacle of obstacles) {
+        const dx = Math.abs(x - obstacle.center.x);
+        const dz = Math.abs(z - obstacle.center.z);
+        const halfX = obstacle.size.x / 2 + PLAYER_RADIUS;
+        const halfZ = obstacle.size.z / 2 + PLAYER_RADIUS;
+        if (dx < halfX && dz < halfZ) return true;
+      }
+      return false;
     };
-    const down = (e: PointerEvent) => { if (e.pointerType === 'touch' && e.clientX > mount.clientWidth * .42) { lookRef.current = { active: true, id: e.pointerId, x: e.clientX }; } };
-    const moveLook = (e: PointerEvent) => { if (lookRef.current.active && lookRef.current.id === e.pointerId) { playerRef.current.angle -= (e.clientX - lookRef.current.x) * .006; lookRef.current.x = e.clientX; } };
-    const endLook = () => { lookRef.current.active = false; };
-    mount.addEventListener('pointerdown', down); mount.addEventListener('pointermove', moveLook); mount.addEventListener('pointerup', endLook); mount.addEventListener('pointercancel', endLook);
 
-    const clock = new THREE.Clock(); let frame = 0; let raf = 0;
-    const animate = () => {
-      const dt = Math.min(clock.getDelta(), .05); const p = playerRef.current; const stick = stickRef.current; const speed = (running ? 15 : 8) * dt;
-      if (stick.active) { const forward = -stick.y; const strafe = stick.x; const nx = p.x + (Math.sin(p.angle) * forward + Math.cos(p.angle) * strafe) * speed; const nz = p.z + (Math.cos(p.angle) * forward - Math.sin(p.angle) * strafe) * speed; if (!blocked(nx, p.z)) p.x = THREE.MathUtils.clamp(nx, -86, 86); if (!blocked(p.x, nz)) p.z = THREE.MathUtils.clamp(nz, -86, 86); if (Math.hypot(stick.x, stick.y) > .15) player.rotation.y = p.angle; }
-      player.position.set(p.x, 0, p.z);
-      const behind = new THREE.Vector3(Math.sin(p.angle) * 12, 7.5, Math.cos(p.angle) * 12); const target = new THREE.Vector3(p.x, 2.5, p.z); camera.position.lerp(target.clone().add(behind), .12); camera.lookAt(target);
-      renderer.render(scene, camera); if (++frame % 20 === 0) setHealth((value) => Math.max(0, value - (stick.active ? .04 : 0))); raf = requestAnimationFrame(animate);
+    const resize = () => {
+      const width = mount.clientWidth;
+      const height = mount.clientHeight;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
     };
-    resize(); window.addEventListener('resize', resize); raf = requestAnimationFrame(animate);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); mount.removeEventListener('pointerdown', down); mount.removeEventListener('pointermove', moveLook); mount.removeEventListener('pointerup', endLook); mount.removeEventListener('pointercancel', endLook); renderer.dispose(); mount.removeChild(renderer.domElement); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running]);
 
-  const joystickDown = (event: React.PointerEvent<HTMLDivElement>) => { event.currentTarget.setPointerCapture(event.pointerId); setMessage('Moviéndote por el pueblo'); };
-  const joystickMove = (event: React.PointerEvent<HTMLDivElement>) => { const rect = event.currentTarget.getBoundingClientRect(); const dx = event.clientX - (rect.left + rect.width / 2); const dy = event.clientY - (rect.top + rect.height / 2); const limit = rect.width * .36; const length = Math.min(1, Math.hypot(dx, dy) / limit); const angle = Math.atan2(dy, dx); stickRef.current = { active: true, x: Math.cos(angle) * length, y: Math.sin(angle) * length }; };
-  const joystickUp = () => { stickRef.current = { active: false, x: 0, y: 0 }; };
+    const processCamera = () => {
+      const state = worldRef.current;
+      const playerPos = new THREE.Vector3(state.x, 0, state.z);
+      const offset = new THREE.Vector3(Math.sin(state.yaw) * -11, 6.6, Math.cos(state.yaw) * -11);
+      const desiredCamera = playerPos.clone().add(offset);
+      camera.position.lerp(desiredCamera, 0.12);
+      camera.lookAt(playerPos.clone().add(new THREE.Vector3(0, 2.8, 0)));
+      playerMesh.position.set(state.x, 0, state.z);
+      playerMesh.rotation.y = -state.yaw + Math.PI / 2;
+    };
 
-  return <div className="battle-shell"><div ref={mountRef} className="world" /><header className="battle-hud"><div className="health"><span className="health-icon">♥</span><div><b>{Math.round(health)}</b><i><em style={{ width: `${health}%` }} /></i></div></div><div className="zone">PUEBLO VIEJO<br /><small>ZONA SEGURA</small></div><button className="map-button" onClick={() => setMessage('Mapa del pueblo abierto')}>MAPA</button></header><div className="crosshair">+</div><div className="objective">{message}</div><div className="joystick" onPointerDown={joystickDown} onPointerMove={joystickMove} onPointerUp={joystickUp} onPointerCancel={joystickUp}><div className="knob" style={{ transform: `translate(${stickRef.current.x * 34}px, ${stickRef.current.y * 34}px)` }} /></div><div className="actions"><button className="action run" onPointerDown={() => setRunning(true)} onPointerUp={() => setRunning(false)}>CORRER</button><button className="action fire" onClick={() => setMessage('No hay enemigos cerca')}>FUEGO</button></div><div className="hint">DESLIZA A LA DERECHA PARA GIRAR</div></div>;
+    let previous = performance.now();
+    let rafId = 0;
+    const tick = (now: number) => {
+      const dt = Math.min((now - previous) / 1000, 0.05);
+      previous = now;
+
+      const state = worldRef.current;
+      const moveAxis = controlsRef.current.moveX;
+      const moveForward = controlsRef.current.moveY;
+      const speed = controlsRef.current.run ? 18 : 11;
+
+      const moveDir = new THREE.Vector3(
+        Math.sin(state.yaw) * moveForward + Math.cos(state.yaw) * moveAxis,
+        0,
+        Math.cos(state.yaw) * moveForward - Math.sin(state.yaw) * moveAxis
+      );
+
+      if (moveDir.lengthSq() > 0.001) {
+        const normalized = moveDir.normalize();
+        const nextX = state.x + normalized.x * speed * dt;
+        const nextZ = state.z + normalized.z * speed * dt;
+        if (!isBlocked(nextX, state.z)) state.x = THREE.MathUtils.clamp(nextX, -WORLD_HALF + 2, WORLD_HALF - 2);
+        if (!isBlocked(state.x, nextZ)) state.z = THREE.MathUtils.clamp(nextZ, -WORLD_HALF + 2, WORLD_HALF - 2);
+      }
+
+      processCamera();
+      renderer.render(scene, camera);
+
+      if (Math.floor(now / 180) % 2 === 0) {
+        setHealth((value) => Math.max(0, value - (controlsRef.current.run ? 0.05 : 0.02)));
+      }
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    const handleLookDown = (event: PointerEvent) => {
+      controlsRef.current.lookActive = true;
+      controlsRef.current.lookId = event.pointerId;
+      controlsRef.current.lookX = event.clientX;
+    };
+
+    const handleLookMove = (event: PointerEvent) => {
+      if (!controlsRef.current.lookActive || controlsRef.current.lookId !== event.pointerId) return;
+      const delta = event.clientX - controlsRef.current.lookX;
+      worldRef.current.yaw -= delta * 0.006;
+      controlsRef.current.lookX = event.clientX;
+    };
+
+    const handleLookUp = () => {
+      controlsRef.current.lookActive = false;
+      controlsRef.current.lookId = -1;
+    };
+
+    mount.addEventListener('pointerdown', handleLookDown);
+    mount.addEventListener('pointermove', handleLookMove);
+    mount.addEventListener('pointerup', handleLookUp);
+    mount.addEventListener('pointercancel', handleLookUp);
+    window.addEventListener('resize', resize);
+    resize();
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      mount.removeEventListener('pointerdown', handleLookDown);
+      mount.removeEventListener('pointermove', handleLookMove);
+      mount.removeEventListener('pointerup', handleLookUp);
+      mount.removeEventListener('pointercancel', handleLookUp);
+      window.removeEventListener('resize', resize);
+      renderer.dispose();
+      mount.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  const updateMovePad = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const dx = event.clientX - centerX;
+    const dy = event.clientY - centerY;
+    const max = rect.width * 0.34;
+    const dist = Math.min(max, Math.hypot(dx, dy));
+    const rad = Math.atan2(dy, dx);
+    const x = Math.cos(rad) * (dist / max);
+    const y = Math.sin(rad) * (dist / max);
+
+    controlsRef.current.moveX = x;
+    controlsRef.current.moveY = -y;
+    setMoveKnob({ x: x * 28, y: y * 28 });
+  };
+
+  const releaseMovePad = () => {
+    controlsRef.current.moveX = 0;
+    controlsRef.current.moveY = 0;
+    setMoveKnob({ x: 0, y: 0 });
+  };
+
+  const fireShot = () => {
+    setAmmo((value) => Math.max(0, value - 1));
+    setObjective('Disparo hecho');
+  };
+
+  const toggleRun = () => {
+    const next = !run;
+    controlsRef.current.run = next;
+    setRun(next);
+    setObjective(next ? 'Correr activado' : 'Movimiento normal');
+  };
+
+  return (
+    <div className="game-shell">
+      <div ref={mountRef} className="game-world" />
+
+      <header className="top-hud">
+        <div className="hud-pill health-pill">
+          <span className="heart">♥</span>
+          <div className="stat-block">
+            <strong>{Math.round(health)}</strong>
+            <i><em style={{ width: `${health}%` }} /></i>
+          </div>
+        </div>
+
+        <div className="hud-pill compact">
+          <span>{ammo}</span>
+          <small>AMMO</small>
+        </div>
+      </header>
+
+      <div className="crosshair">+</div>
+      <div className="objective-tag">{objective}</div>
+
+      <div
+        className="move-pad"
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          updateMovePad(event);
+        }}
+        onPointerMove={updateMovePad}
+        onPointerUp={releaseMovePad}
+        onPointerLeave={releaseMovePad}
+        onPointerCancel={releaseMovePad}
+      >
+        <div className="move-knob" style={{ transform: `translate(${moveKnob.x}px, ${moveKnob.y}px)` }} />
+      </div>
+
+      <div className="action-bar">
+        <button className={`action ${run ? 'run-on' : ''}`} onPointerDown={toggleRun} onPointerUp={toggleRun}>
+          RUN
+        </button>
+        <button className="action fire" onClick={fireShot}>FIRE</button>
+      </div>
+    </div>
+  );
 }
