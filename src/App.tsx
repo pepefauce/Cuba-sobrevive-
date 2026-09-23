@@ -6,72 +6,52 @@ const MAP = [
   '1....3.3.......1', '1....333.......1', '1..............1', '1..22......11..1',
   '1...2..........1', '1..............1', '1..............1', '1111111111111111',
 ];
-const TILE_COLORS: Record<string, string> = { '1': '#bf7651', '2': '#d2a34f', '3': '#6c7d61' };
-const isWall = (x: number, y: number) => MAP[Math.floor(y)]?.[Math.floor(x)] !== '.';
+const WALLS: Record<string, string> = { '1': '#bd7250', '2': '#c58e45', '3': '#64765d' };
+const blocked = (x: number, y: number) => MAP[Math.floor(y)]?.[Math.floor(x)] !== '.';
 
 export default function App() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const playerRef = useRef({ x: 2.5, y: 12.5, angle: -Math.PI / 2 });
-  const keysRef = useRef<Record<string, boolean>>({});
-  const lookRef = useRef<{ id: number; x: number } | null>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const player = useRef({ x: 2.5, y: 12.5, angle: -Math.PI / 2 });
+  const controls = useRef<Record<string, boolean>>({});
+  const dragging = useRef<{ id: number; x: number } | null>(null);
   const [energy, setEnergy] = useState(100);
-  const [position, setPosition] = useState({ x: 2.5, y: 12.5 });
-  const [notice, setNotice] = useState('Desliza la pantalla para mirar y usa el control para caminar.');
+  const [pos, setPos] = useState({ x: 2.5, y: 12.5 });
+  const [status, setStatus] = useState('Desliza para mirar alrededor');
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const resize = () => {
-      const ratio = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.max(1, Math.floor(canvas.clientWidth * ratio));
-      canvas.height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    };
-    const render = () => {
-      const width = canvas.clientWidth; const height = canvas.clientHeight; const player = playerRef.current;
-      const horizon = height * .47; ctx.clearRect(0, 0, width, height);
-      const sky = ctx.createLinearGradient(0, 0, 0, horizon); sky.addColorStop(0, '#8bc4c7'); sky.addColorStop(.7, '#e6c88e'); sky.addColorStop(1, '#d58b59'); ctx.fillStyle = sky; ctx.fillRect(0, 0, width, horizon);
-      ctx.fillStyle = '#7e654d'; ctx.fillRect(0, horizon, width, height - horizon);
-      ctx.fillStyle = 'rgba(255,232,164,.9)'; ctx.beginPath(); ctx.arc(width * .78, height * .2, 32, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(37,65,63,.45)'; for (let i = 0; i < 12; i++) { const bx = i * width / 11; ctx.fillRect(bx, horizon - 12 - (i % 4) * 9, width / 14, 12 + (i % 4) * 9); }
-      const fov = Math.PI / 3; const rays = Math.max(180, Math.floor(width / 2)); const strip = width / rays;
-      for (let ray = 0; ray < rays; ray++) {
-        const rayAngle = player.angle - fov / 2 + ray / rays * fov; let distance = 0; let tile = '1';
-        while (distance < 22) { distance += .025; const testX = player.x + Math.cos(rayAngle) * distance; const testY = player.y + Math.sin(rayAngle) * distance; if (isWall(testX, testY)) { tile = MAP[Math.floor(testY)]?.[Math.floor(testX)] || '1'; break; } }
-        const corrected = distance * Math.cos(rayAngle - player.angle); const wallHeight = Math.min(height * 1.8, height * .78 / Math.max(corrected, .01)); const top = horizon - wallHeight / 2; const shade = Math.max(.22, 1 - corrected / 13);
-        ctx.fillStyle = shadeColor(TILE_COLORS[tile] || TILE_COLORS['1'], shade); ctx.fillRect(ray * strip, top, strip + 1, wallHeight);
+    const view = canvas.current; const ctx = view?.getContext('2d');
+    if (!view || !ctx) return;
+    const resize = () => { const dpr = Math.min(devicePixelRatio || 1, 1.5); view.width = view.clientWidth * dpr; view.height = view.clientHeight * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
+    const draw = () => {
+      const w = view.clientWidth, h = view.clientHeight, p = player.current, horizon = h * .48;
+      const sky = ctx.createLinearGradient(0, 0, 0, horizon); sky.addColorStop(0, '#75b2b7'); sky.addColorStop(.72, '#d9b777'); sky.addColorStop(1, '#e18d56'); ctx.fillStyle = sky; ctx.fillRect(0, 0, w, horizon);
+      ctx.fillStyle = '#70564a'; ctx.fillRect(0, horizon, w, h - horizon);
+      ctx.fillStyle = 'rgba(255,226,157,.9)'; ctx.beginPath(); ctx.arc(w * .78, h * .2, 27, 0, 7); ctx.fill();
+      // Silueta de casas lejanas.
+      ctx.fillStyle = 'rgba(31,65,65,.42)'; for (let i = 0; i < 13; i++) { const x = i * w / 12; const bh = 12 + (i % 4) * 8; ctx.fillRect(x, horizon - bh, w / 15, bh); }
+      const fov = Math.PI / 3.1, rays = Math.min(420, Math.max(220, Math.floor(w * .7))), strip = w / rays;
+      for (let r = 0; r < rays; r++) {
+        const a = p.angle - fov / 2 + r / rays * fov; let distance = .02; let tile = '1';
+        while (distance < 24) { const tx = p.x + Math.cos(a) * distance, ty = p.y + Math.sin(a) * distance; if (blocked(tx, ty)) { tile = MAP[Math.floor(ty)]?.[Math.floor(tx)] || '1'; break; } distance += .035; }
+        const corrected = distance * Math.cos(a - p.angle), wall = Math.min(h * 1.8, h * .82 / Math.max(corrected, .02)), top = horizon - wall / 2;
+        const light = Math.max(.3, 1 - corrected / 17); ctx.fillStyle = shade(WALLS[tile] || WALLS['1'], light); ctx.fillRect(r * strip, top, strip + 1, wall);
+        // Detalles verticales de las fachadas para evitar paredes planas.
+        if (corrected < 9 && r % 13 < 3) { ctx.fillStyle = 'rgba(45,31,28,.28)'; ctx.fillRect(r * strip, top + wall * .25, strip + 1, wall * .16); }
+        ctx.fillStyle = `rgba(8,18,23,${Math.min(.4, corrected / 30)})`; ctx.fillRect(r * strip, top, strip + 1, 2);
       }
-      ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(width / 2 - 8, height / 2); ctx.lineTo(width / 2 + 8, height / 2); ctx.moveTo(width / 2, height / 2 - 8); ctx.lineTo(width / 2, height / 2 + 8); ctx.stroke();
-      ctx.fillStyle = 'rgba(8,20,27,.58)'; ctx.fillRect(16, height - 44, 210, 28); ctx.fillStyle = '#f8dfaa'; ctx.font = '11px system-ui'; ctx.fillText('PUEBLO DE LA HABANA · EXPLORACIÓN', 27, height - 26);
+      // Vignette y retícula discreta.
+      const vignette = ctx.createRadialGradient(w / 2, h / 2, h * .18, w / 2, h / 2, h * .75); vignette.addColorStop(0, 'transparent'); vignette.addColorStop(1, 'rgba(4,12,17,.48)'); ctx.fillStyle = vignette; ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = 'rgba(255,245,211,.8)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(w / 2 - 7, h / 2); ctx.lineTo(w / 2 + 7, h / 2); ctx.moveTo(w / 2, h / 2 - 7); ctx.lineTo(w / 2, h / 2 + 7); ctx.stroke();
     };
-    const move = (delta: number) => {
-      const player = playerRef.current; const keys = keysRef.current; const speed = delta * 2.3; let dx = 0; let dy = 0;
-      if (keys.w || keys.arrowup) { dx += Math.cos(player.angle) * speed; dy += Math.sin(player.angle) * speed; }
-      if (keys.s || keys.arrowdown) { dx -= Math.cos(player.angle) * speed; dy -= Math.sin(player.angle) * speed; }
-      if (keys.a) { dx += Math.cos(player.angle - Math.PI / 2) * speed; dy += Math.sin(player.angle - Math.PI / 2) * speed; }
-      if (keys.d) { dx += Math.cos(player.angle + Math.PI / 2) * speed; dy += Math.sin(player.angle + Math.PI / 2) * speed; }
-      if (keys.arrowleft) player.angle -= delta * 2.2; if (keys.arrowright) player.angle += delta * 2.2;
-      if (!isWall(player.x + dx, player.y)) player.x += dx; if (!isWall(player.x, player.y + dy)) player.y += dy;
-    };
-    let last = performance.now(); let frame = 0; let animation = 0;
-    const loop = (now: number) => { const delta = Math.min((now - last) / 1000, .05); last = now; move(delta); render(); if (++frame % 10 === 0) { setPosition({ x: playerRef.current.x, y: playerRef.current.y }); if (Object.values(keysRef.current).some(Boolean)) setEnergy(value => Math.max(0, value - .08)); } animation = requestAnimationFrame(loop); };
-    resize(); window.addEventListener('resize', resize); animation = requestAnimationFrame(loop);
-    const down = (event: KeyboardEvent) => { keysRef.current[event.key.toLowerCase()] = true; }; const up = (event: KeyboardEvent) => { keysRef.current[event.key.toLowerCase()] = false; };
-    window.addEventListener('keydown', down); window.addEventListener('keyup', up);
-    return () => { cancelAnimationFrame(animation); window.removeEventListener('resize', resize); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+    const update = (dt: number) => { const p = player.current, k = controls.current, speed = dt * 2.1; let dx = 0, dy = 0; if (k.forward) { dx += Math.cos(p.angle) * speed; dy += Math.sin(p.angle) * speed; } if (k.back) { dx -= Math.cos(p.angle) * speed; dy -= Math.sin(p.angle) * speed; } if (k.left) p.angle -= dt * 2.3; if (k.right) p.angle += dt * 2.3; if (!blocked(p.x + dx, p.y)) p.x += dx; if (!blocked(p.x, p.y + dy)) p.y += dy; };
+    let previous = performance.now(), frame = 0, raf = 0; const loop = (now: number) => { const dt = Math.min((now - previous) / 1000, .05); previous = now; update(dt); draw(); if (++frame % 12 === 0) { setPos({ x: player.current.x, y: player.current.y }); if (Object.values(controls.current).some(Boolean)) setEnergy(e => Math.max(0, e - .05)); } raf = requestAnimationFrame(loop); };
+    resize(); addEventListener('resize', resize); raf = requestAnimationFrame(loop); const down = (e: KeyboardEvent) => { const key = e.key.toLowerCase(); if (key === 'w' || key === 'arrowup') controls.current.forward = true; if (key === 's' || key === 'arrowdown') controls.current.back = true; if (key === 'a' || key === 'arrowleft') controls.current.left = true; if (key === 'd' || key === 'arrowright') controls.current.right = true; }; const up = (e: KeyboardEvent) => { const key = e.key.toLowerCase(); if (key === 'w' || key === 'arrowup') controls.current.forward = false; if (key === 's' || key === 'arrowdown') controls.current.back = false; if (key === 'a' || key === 'arrowleft') controls.current.left = false; if (key === 'd' || key === 'arrowright') controls.current.right = false; }; addEventListener('keydown', down); addEventListener('keyup', up);
+    return () => { cancelAnimationFrame(raf); removeEventListener('resize', resize); removeEventListener('keydown', down); removeEventListener('keyup', up); };
   }, []);
 
-  const hold = (key: string, active: boolean) => { keysRef.current[key] = active; if (active) setNotice('Caminando por el pueblo...'); };
-  const lookStart = (event: React.PointerEvent<HTMLCanvasElement>) => { if (event.pointerType === 'touch') { event.currentTarget.setPointerCapture(event.pointerId); lookRef.current = { id: event.pointerId, x: event.clientX }; } };
-  const lookMove = (event: React.PointerEvent<HTMLCanvasElement>) => { if (!lookRef.current || lookRef.current.id !== event.pointerId) return; const difference = event.clientX - lookRef.current.x; playerRef.current.angle += difference * .009; lookRef.current.x = event.clientX; };
-  const lookEnd = () => { lookRef.current = null; };
-
-  return <div className="game-shell first-person">
-    <header className="game-hud"><div><p className="eyebrow">CUBA // SOBREVIVE</p><h1>Exploración del pueblo</h1></div><div className="hud-right"><span className="online"><i /> EN LÍNEA</span><span>ENERGÍA <b>{Math.floor(energy)}%</b></span></div></header>
-    <main className="viewport-panel"><canvas ref={canvasRef} onPointerDown={lookStart} onPointerMove={lookMove} onPointerUp={lookEnd} onPointerCancel={lookEnd} /><div className="direction">N</div><div className="crosshair-label">DESLIZA PARA MIRAR</div></main>
-    <section className="bottom-hud"><div><span className="eyebrow">POSICIÓN</span><strong>{position.x.toFixed(1)}, {position.y.toFixed(1)}</strong><p>{notice}</p></div><div className="mobile-controls"><button aria-label="Girar izquierda" onPointerDown={() => hold('arrowleft', true)} onPointerUp={() => hold('arrowleft', false)} onPointerLeave={() => hold('arrowleft', false)}>↶</button><button aria-label="Avanzar" onPointerDown={() => hold('w', true)} onPointerUp={() => hold('w', false)} onPointerLeave={() => hold('w', false)}>▲</button><button aria-label="Girar derecha" onPointerDown={() => hold('arrowright', true)} onPointerUp={() => hold('arrowright', false)} onPointerLeave={() => hold('arrowright', false)}>↷</button><button aria-label="Retroceder" onPointerDown={() => hold('s', true)} onPointerUp={() => hold('s', false)} onPointerLeave={() => hold('s', false)}>▼</button></div><small>DESLIZA LA VISTA<br />MANTÉN PULSADO PARA CAMINAR</small></section>
-  </div>;
+  const hold = (key: string, value: boolean) => { controls.current[key] = value; setStatus(value ? 'Caminando por el pueblo…' : 'Desliza para mirar alrededor'); };
+  const lookStart = (e: React.PointerEvent<HTMLCanvasElement>) => { if (e.pointerType === 'touch') { e.currentTarget.setPointerCapture(e.pointerId); dragging.current = { id: e.pointerId, x: e.clientX }; } };
+  const lookMove = (e: React.PointerEvent<HTMLCanvasElement>) => { if (dragging.current?.id !== e.pointerId) return; player.current.angle += (e.clientX - dragging.current.x) * .008; dragging.current.x = e.clientX; };
+  return <div className="game-shell"><header className="game-hud"><div><p className="eyebrow">CUBA // SOBREVIVE</p><h1>El pueblo</h1></div><div className="hud-right"><span className="online"><i /> EN LÍNEA</span><span>⚡ {Math.floor(energy)}%</span></div></header><main className="viewport"><canvas ref={canvas} onPointerDown={lookStart} onPointerMove={lookMove} onPointerUp={() => { dragging.current = null; }} onPointerCancel={() => { dragging.current = null; }} /><span className="look-tip">DESLIZA PARA MIRAR</span></main><footer className="bottom-hud"><div><p className="eyebrow">POSICIÓN {pos.x.toFixed(1)}, {pos.y.toFixed(1)}</p><span>{status}</span></div><div className="mobile-controls"><button onPointerDown={() => hold('left', true)} onPointerUp={() => hold('left', false)} onPointerLeave={() => hold('left', false)}>↶</button><button onPointerDown={() => hold('forward', true)} onPointerUp={() => hold('forward', false)} onPointerLeave={() => hold('forward', false)}>▲</button><button onPointerDown={() => hold('right', true)} onPointerUp={() => hold('right', false)} onPointerLeave={() => hold('right', false)}>↷</button><button onPointerDown={() => hold('back', true)} onPointerUp={() => hold('back', false)} onPointerLeave={() => hold('back', false)}>▼</button></div></footer></div>;
 }
-function shadeColor(hex: string, amount: number) { const value = hex.replace('#', ''); const r = Math.floor(parseInt(value.slice(0, 2), 16) * amount); const g = Math.floor(parseInt(value.slice(2, 4), 16) * amount); const b = Math.floor(parseInt(value.slice(4, 6), 16) * amount); return `rgb(${r}, ${g}, ${b})`; }
+function shade(hex: string, factor: number) { const n = hex.slice(1); return `rgb(${Math.floor(parseInt(n.slice(0,2),16)*factor)},${Math.floor(parseInt(n.slice(2,4),16)*factor)},${Math.floor(parseInt(n.slice(4,6),16)*factor)})`; }
