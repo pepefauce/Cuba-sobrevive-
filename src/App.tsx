@@ -1,124 +1,111 @@
 import React, { useState } from 'react';
 
+const locations = [
+  {
+    name: 'Frente al banco central',
+    description: 'La cola da la vuelta a la manzana. El cajero está pelado sin efectivo.',
+    accent: 'cyan',
+  },
+  {
+    name: 'Calle Neptuno',
+    description: 'El calor pega fuerte y quedan pocos suministros en los comercios.',
+    accent: 'amber',
+  },
+  {
+    name: 'Malecón de La Habana',
+    description: 'El mar está tranquilo, pero la ciudad comienza a quedarse sin luz.',
+    accent: 'blue',
+  },
+];
+
 export default function App() {
   const [energia, setEnergia] = useState(100);
-  const [cash, setCash] = useState(1500);
-  const [transf, setTransf] = useState(8000);
-  const [aceite, setAceite] = useState(0);
-  const [gasolina, setGasolina] = useState(0);
+  const [cash] = useState(1500);
+  const [transf] = useState(8000);
+  const [aceite] = useState(0);
+  const [gasolina] = useState(0);
   const [coords, setCoords] = useState({ x: -3, y: 0 });
-  const [lugar, setLugar] = useState("Frente al banco central.");
-  const [descripcion, setDescripcion] = useState("La cola da la vuelta a la manzana. El cajero está pelado sin efectivo.");
+  const [locationIndex, setLocationIndex] = useState(0);
+  const [message, setMessage] = useState('Explora la ciudad y administra tus recursos.');
+
+  const location = locations[locationIndex];
 
   const mover = (dir: string) => {
-    setCoords(prev => {
-      let nx = prev.x;
-      let ny = prev.y;
-      if (dir === 'UP') ny += 1;
-      if (dir === 'DOWN') ny -= 1;
-      if (dir === 'LEFT') nx -= 1;
-      if (dir === 'RIGHT') nx += 1;
-      return { x: nx, y: ny };
+    setCoords((prev) => {
+      let x = prev.x;
+      let y = prev.y;
+      if (dir === 'UP') y += 1;
+      if (dir === 'DOWN') y -= 1;
+      if (dir === 'LEFT') x -= 1;
+      if (dir === 'RIGHT') x += 1;
+      return { x, y };
     });
-    setEnergia(prev => Math.max(0, prev - 2));
+    setEnergia((prev) => Math.max(0, prev - 2));
+    setLocationIndex((prev) => (prev + 1) % locations.length);
+    setMessage('Te has desplazado. La ciudad cambia a cada paso.');
+  };
+
+  const interactuar = () => {
+    setMessage('Has registrado el lugar. Busca suministros antes de continuar.');
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 font-sans select-none">
-      {/* Header / Barra de Estado */}
-      <header className="bg-slate-900/80 backdrop-blur border border-slate-800 rounded-2xl p-4 shadow-xl">
-        <div className="flex items-center justify-between mb-3">
-          <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-400 bg-emerald-950/50 px-2.5 py-1 rounded-full border border-emerald-800/50">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            Conectado • PWA
-          </span>
-          <span className="text-xs text-slate-400 font-mono">Coord: [{coords.x}, {coords.y}]</span>
-        </div>
-
-        {/* Estadísticas de Supervivencia */}
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
-            <span className="text-slate-400 flex items-center gap-1.5">⚡ Energía</span>
-            <span className="font-bold text-amber-400">{energia}%</span>
+    <div className="game-shell">
+      <div className="city-light city-light-one" />
+      <div className="city-light city-light-two" />
+      <div className="game-content">
+        <header className="hud-panel top-panel">
+          <div className="brand-row">
+            <div>
+              <p className="eyebrow">CUBA // SOBREVIVE</p>
+              <h1>Diario de supervivencia</h1>
+            </div>
+            <div className="connection-status"><span /> EN LÍNEA</div>
           </div>
-          <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
-            <span className="text-slate-400 flex items-center gap-1.5">💵 Cash</span>
-            <span className="font-bold text-emerald-400">{cash} USDT</span>
+          <div className="coordinate-row">
+            <span>SECTOR ACTUAL</span>
+            <strong>[{coords.x}, {coords.y}]</strong>
           </div>
-          <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
-            <span className="text-slate-400 flex items-center gap-1.5">📱 Transf</span>
-            <span className="font-bold text-sky-400">{transf} USDT</span>
+
+          <div className="stats-grid">
+            <div className="stat-card energy-card">
+              <div className="stat-heading"><span>⚡</span> ENERGÍA <b>{energia}%</b></div>
+              <div className="meter"><i style={{ width: `${energia}%` }} /></div>
+            </div>
+            <div className="stat-card"><div className="stat-heading"><span>₿</span> EFECTIVO <b className="green">{cash}</b></div><small>USDT disponibles</small></div>
+            <div className="stat-card"><div className="stat-heading"><span>⇄</span> TRANSFERENCIA <b className="blue">{transf}</b></div><small>USDT en cuenta</small></div>
+            <div className="stat-card"><div className="stat-heading"><span>▣</span> COMBUSTIBLE <b className="purple">{aceite}L / {gasolina}L</b></div><small>aceite / gasolina</small></div>
           </div>
-          <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 flex items-center justify-between">
-            <span className="text-slate-400 flex items-center gap-1.5">🛢️ Recursos</span>
-            <span className="font-bold text-indigo-300">{aceite}L / {gasolina}L</span>
+        </header>
+
+        <main className="scene-panel">
+          <div className={`scene-art scene-${location.accent}`}>
+            <div className="sun" />
+            <div className="skyline skyline-back" />
+            <div className="skyline skyline-front" />
+            <div className="road-line" />
+            <span className="scene-label">ZONA EXPLORADA</span>
           </div>
-        </div>
-      </header>
-
-      {/* Pantalla de Escenario Actual */}
-      <main className="my-auto py-6">
-        <div className="bg-gradient-to-b from-slate-900 to-slate-900/60 border border-slate-800/80 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none"></div>
-          
-          <h2 className="text-2xl font-black text-white tracking-tight mb-3 flex items-center gap-2">
-            📍 {lugar}
-          </h2>
-          <p className="text-slate-300 text-base leading-relaxed mb-6">
-            {descripcion}
-          </p>
-
-          <button 
-            onClick={() => alert("¡Acción realizada en el lugar!")}
-            className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-3.5 px-4 rounded-2xl shadow-lg shadow-cyan-900/30 transition-all active:scale-95 flex items-center justify-center gap-2 border border-cyan-400/20"
-          >
-            🔍 Interactuar con el lugar
-          </button>
-        </div>
-      </main>
-
-      {/* Controles de Movimiento Estilo D-Pad Moderno */}
-      <footer className="bg-slate-900/80 backdrop-blur border border-slate-800 rounded-3xl p-5 shadow-2xl flex flex-col items-center">
-        <span className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-4">
-          🎮 Controles de Movimiento
-        </span>
-
-        <div className="grid grid-cols-3 gap-3 w-48 max-w-full">
-          <div></div>
-          <button 
-            onClick={() => mover('UP')}
-            className="bg-slate-800 hover:bg-slate-700 active:bg-cyan-600 text-white font-bold h-14 rounded-2xl flex items-center justify-center text-xl shadow-md border border-slate-700 active:scale-95 transition-all"
-          >
-            ▲
-          </button>
-          <div></div>
-
-          <button 
-            onClick={() => mover('LEFT')}
-            className="bg-slate-800 hover:bg-slate-700 active:bg-cyan-600 text-white font-bold h-14 rounded-2xl flex items-center justify-center text-xl shadow-md border border-slate-700 active:scale-95 transition-all"
-          >
-            ◀
-          </button>
-          <div className="flex items-center justify-center bg-slate-950/40 rounded-2xl border border-slate-800 text-xs text-slate-500 font-mono">
-            MOVE
+          <div className="location-copy">
+            <p className="eyebrow">UBICACIÓN DETECTADA</p>
+            <h2>{location.name}</h2>
+            <p className="description">{location.description}</p>
+            <div className="notice"><span>!</span>{message}</div>
+            <button className="primary-action" onClick={interactuar}>INTERACTUAR CON EL LUGAR <span>→</span></button>
           </div>
-          <button 
-            onClick={() => mover('RIGHT')}
-            className="bg-slate-800 hover:bg-slate-700 active:bg-cyan-600 text-white font-bold h-14 rounded-2xl flex items-center justify-center text-xl shadow-md border border-slate-700 active:scale-95 transition-all"
-          >
-            ▶
-          </button>
+        </main>
 
-          <div></div>
-          <button 
-            onClick={() => mover('DOWN')}
-            className="bg-slate-800 hover:bg-slate-700 active:bg-cyan-600 text-white font-bold h-14 rounded-2xl flex items-center justify-center text-xl shadow-md border border-slate-700 active:scale-95 transition-all"
-          >
-            ▼
-          </button>
-          <div></div>
-        </div>
-      </footer>
+        <footer className="controls-panel">
+          <div className="controls-title"><span>DESPLAZAMIENTO</span><small>Usa los controles para explorar</small></div>
+          <div className="d-pad">
+            <button aria-label="Mover arriba" onClick={() => mover('UP')}>▲</button>
+            <button aria-label="Mover izquierda" onClick={() => mover('LEFT')}>◀</button>
+            <div className="d-pad-center">MOVE</div>
+            <button aria-label="Mover derecha" onClick={() => mover('RIGHT')}>▶</button>
+            <button aria-label="Mover abajo" onClick={() => mover('DOWN')}>▼</button>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
