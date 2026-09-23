@@ -2,13 +2,102 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg: #020617;
+  --cyan: #22d3ee;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(circle at top, rgba(34, 211, 238, 0.08), transparent 35%),
+    radial-gradient(circle at bottom, rgba(251, 146, 60, 0.1), transparent 30%),
+    var(--bg);
+}
+
 body {
   margin: 0;
   padding: 0;
-  background-color: #020617;
+  background-color: var(--bg);
   color: #ffffff;
   font-family: system-ui, -apple-system, sans-serif;
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
+  position: relative;
+}
+
+/* Líneas de monitor retro y textura ambiental */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.035),
+    rgba(255, 255, 255, 0.035) 1px,
+    transparent 2px,
+    transparent 4px
+  );
+  mix-blend-mode: screen;
+  opacity: 0.35;
+}
+
+/* Viñeta para crear tensión y enfocar el centro */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 21;
+  background: radial-gradient(
+    circle at center,
+    transparent 54%,
+    rgba(0, 0, 0, 0.72) 100%
+  );
+}
+
+header,
+footer,
+main > div {
+  box-shadow:
+    0 0 0 1px rgba(148, 163, 184, 0.08),
+    0 20px 40px rgba(2, 6, 23, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+button {
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    filter 0.15s ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+/* Pulso del indicador de conexión */
+@keyframes pulseGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(34, 211, 238, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(34, 211, 238, 0.5);
+  }
+}
+
+header .animate-pulse {
+  animation: pulseGlow 1.6s ease-in-out infinite;
 }
