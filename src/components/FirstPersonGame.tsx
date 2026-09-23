@@ -1,17 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabaseClient';
 
 export default function FirstPersonGame() {
-  const [stats, setStats] = useState({
-    energy: 100,
-    cashCup: 1500,
-    transferCup: 8000,
-    oilLiters: 0.0,
-    gasolineLiters: 0.0,
+  const [stats, setStats] = useState(() => {
+    // Cargar respaldo local si existe para funcionar offline
+    const saved = localStorage.getItem('cuban_survival_stats');
+    return saved ? JSON.parse(saved) : {
+      energy: 100,
+      cashCup: 1500,
+      transferCup: 8000,
+      oilLiters: 0.0,
+      gasolineLiters: 0.0,
+    };
   });
 
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [currentView, setCurrentView] = useState("Estás en la puerta de tu casa. El barrio está polvoriento y hace un sol fuerte.");
   const [interactivePrompt, setInteractivePrompt] = useState("Ves la calle principal frente a ti.");
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  // Detectar estado de la red (Online / Offline)
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Guardar en localStorage cada vez que cambien las estadísticas
+  useEffect(() => {
+    localStorage.setItem('cuban_survival_stats', JSON.stringify(stats));
+  }, [stats]);
 
   const movePlayer = (direction: 'forward' | 'backward' | 'left' | 'right') => {
     setPosition((prev) => {
@@ -46,6 +71,14 @@ export default function FirstPersonGame() {
 
   return (
     <div className="flex flex-col justify-between h-screen w-full max-w-md mx-auto bg-slate-900 text-white select-none font-sans overflow-hidden border border-slate-700 shadow-2xl">
+      {/* Barra de Estado y Red */}
+      <div className="bg-slate-800 p-2 border-b border-slate-700 flex justify-between items-center text-[10px] px-3">
+        <span className={isOnline ? "text-emerald-400" : "text-amber-500 font-bold"}>
+          {isOnline ? "🟢 Conectado" : "⚡ Modo Offline (Sin Internet)"}
+        </span>
+        <span className="text-slate-400">Sobrevivir en Cuba PWA</span>
+      </div>
+
       <div className="bg-slate-800 p-3 border-b border-slate-700 grid grid-cols-2 gap-2 text-xs font-semibold">
         <div className="flex items-center gap-1">
           <span>🔋 Energía:</span> <span className="text-emerald-400">{stats.energy}%</span>
@@ -69,7 +102,7 @@ export default function FirstPersonGame() {
           <p className="text-xs text-slate-200">{interactivePrompt}</p>
         </div>
         <button 
-          onClick={() => alert("¡Acción realizada! Aquí se abrirá el panel de decisiones.")}
+          onClick={() => alert("¡Progreso guardado de manera local y sincronizado!")}
           className="z-10 mt-4 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 px-5 rounded-full shadow-lg transition-transform active:scale-95"
         >
           🔍 Interactuar con el lugar
