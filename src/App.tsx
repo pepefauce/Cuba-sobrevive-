@@ -1,111 +1,164 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
-const locations = [
-  {
-    name: 'Frente al banco central',
-    description: 'La cola da la vuelta a la manzana. El cajero está pelado sin efectivo.',
-    accent: 'cyan',
-  },
-  {
-    name: 'Calle Neptuno',
-    description: 'El calor pega fuerte y quedan pocos suministros en los comercios.',
-    accent: 'amber',
-  },
-  {
-    name: 'Malecón de La Habana',
-    description: 'El mar está tranquilo, pero la ciudad comienza a quedarse sin luz.',
-    accent: 'blue',
-  },
+const MAP = [
+  '1111111111111111',
+  '1..............1',
+  '1..111...22....1',
+  '1..1.1...2.....1',
+  '1..1.1.........1',
+  '1..111....111..1',
+  '1...........1..1',
+  '1....333....1..1',
+  '1....3.3.......1',
+  '1....333.......1',
+  '1..............1',
+  '1..22......11..1',
+  '1...2..........1',
+  '1..............1',
+  '1..............1',
+  '1111111111111111',
 ];
 
+const TILE_COLORS: Record<string, string> = {
+  '1': '#bf7651',
+  '2': '#d2a34f',
+  '3': '#6c7d61',
+};
+
+function isWall(x: number, y: number) {
+  const row = MAP[Math.floor(y)];
+  return row?.[Math.floor(x)] !== '.';
+}
+
 export default function App() {
-  const [energia, setEnergia] = useState(100);
-  const [cash] = useState(1500);
-  const [transf] = useState(8000);
-  const [aceite] = useState(0);
-  const [gasolina] = useState(0);
-  const [coords, setCoords] = useState({ x: -3, y: 0 });
-  const [locationIndex, setLocationIndex] = useState(0);
-  const [message, setMessage] = useState('Explora la ciudad y administra tus recursos.');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const playerRef = useRef({ x: 2.5, y: 12.5, angle: -Math.PI / 2 });
+  const keysRef = useRef<Record<string, boolean>>({});
+  const [energy, setEnergy] = useState(100);
+  const [position, setPosition] = useState({ x: 2.5, y: 12.5 });
+  const [notice, setNotice] = useState('Explora el pueblo con WASD o las flechas.');
 
-  const location = locations[locationIndex];
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-  const mover = (dir: string) => {
-    setCoords((prev) => {
-      let x = prev.x;
-      let y = prev.y;
-      if (dir === 'UP') y += 1;
-      if (dir === 'DOWN') y -= 1;
-      if (dir === 'LEFT') x -= 1;
-      if (dir === 'RIGHT') x += 1;
-      return { x, y };
-    });
-    setEnergia((prev) => Math.max(0, prev - 2));
-    setLocationIndex((prev) => (prev + 1) % locations.length);
-    setMessage('Te has desplazado. La ciudad cambia a cada paso.');
-  };
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+      canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    };
 
-  const interactuar = () => {
-    setMessage('Has registrado el lugar. Busca suministros antes de continuar.');
-  };
+    const render = () => {
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      const player = playerRef.current;
+      const horizon = height * 0.47;
 
-  return (
-    <div className="game-shell">
-      <div className="city-light city-light-one" />
-      <div className="city-light city-light-two" />
-      <div className="game-content">
-        <header className="hud-panel top-panel">
-          <div className="brand-row">
-            <div>
-              <p className="eyebrow">CUBA // SOBREVIVE</p>
-              <h1>Diario de supervivencia</h1>
-            </div>
-            <div className="connection-status"><span /> EN LÍNEA</div>
-          </div>
-          <div className="coordinate-row">
-            <span>SECTOR ACTUAL</span>
-            <strong>[{coords.x}, {coords.y}]</strong>
-          </div>
+      ctx.clearRect(0, 0, width, height);
+      const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+      sky.addColorStop(0, '#8bc4c7');
+      sky.addColorStop(0.7, '#e6c88e');
+      sky.addColorStop(1, '#d58b59');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, width, horizon);
+      ctx.fillStyle = '#7e654d';
+      ctx.fillRect(0, horizon, width, height - horizon);
 
-          <div className="stats-grid">
-            <div className="stat-card energy-card">
-              <div className="stat-heading"><span>⚡</span> ENERGÍA <b>{energia}%</b></div>
-              <div className="meter"><i style={{ width: `${energia}%` }} /></div>
-            </div>
-            <div className="stat-card"><div className="stat-heading"><span>₿</span> EFECTIVO <b className="green">{cash}</b></div><small>USDT disponibles</small></div>
-            <div className="stat-card"><div className="stat-heading"><span>⇄</span> TRANSFERENCIA <b className="blue">{transf}</b></div><small>USDT en cuenta</small></div>
-            <div className="stat-card"><div className="stat-heading"><span>▣</span> COMBUSTIBLE <b className="purple">{aceite}L / {gasolina}L</b></div><small>aceite / gasolina</small></div>
-          </div>
-        </header>
+      // Sol, nubes y silueta del pueblo.
+      ctx.fillStyle = 'rgba(255, 232, 164, .9)';
+      ctx.beginPath(); ctx.arc(width * .78, height * .2, 32, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(37, 65, 63, .45)';
+      for (let i = 0; i < 12; i++) {
+        const bx = i * width / 11;
+        const bh = 12 + (i % 4) * 9;
+        ctx.fillRect(bx, horizon - bh, width / 14, bh);
+      }
 
-        <main className="scene-panel">
-          <div className={`scene-art scene-${location.accent}`}>
-            <div className="sun" />
-            <div className="skyline skyline-back" />
-            <div className="skyline skyline-front" />
-            <div className="road-line" />
-            <span className="scene-label">ZONA EXPLORADA</span>
-          </div>
-          <div className="location-copy">
-            <p className="eyebrow">UBICACIÓN DETECTADA</p>
-            <h2>{location.name}</h2>
-            <p className="description">{location.description}</p>
-            <div className="notice"><span>!</span>{message}</div>
-            <button className="primary-action" onClick={interactuar}>INTERACTUAR CON EL LUGAR <span>→</span></button>
-          </div>
-        </main>
+      const fov = Math.PI / 3;
+      const rays = Math.max(180, Math.floor(width / 2));
+      const strip = width / rays;
+      for (let ray = 0; ray < rays; ray++) {
+        const rayAngle = player.angle - fov / 2 + (ray / rays) * fov;
+        let distance = 0;
+        let hit = false;
+        let tile = '1';
+        while (!hit && distance < 22) {
+          distance += 0.025;
+          const testX = player.x + Math.cos(rayAngle) * distance;
+          const testY = player.y + Math.sin(rayAngle) * distance;
+          if (isWall(testX, testY)) {
+            hit = true;
+            tile = MAP[Math.floor(testY)]?.[Math.floor(testX)] || '1';
+          }
+        }
+        const corrected = distance * Math.cos(rayAngle - player.angle);
+        const wallHeight = Math.min(height * 1.8, height * 0.78 / Math.max(corrected, .01));
+        const top = horizon - wallHeight / 2;
+        const shade = Math.max(.22, 1 - corrected / 13);
+        const base = TILE_COLORS[tile] || TILE_COLORS['1'];
+        ctx.fillStyle = shadeColor(base, shade);
+        ctx.fillRect(ray * strip, top, strip + 1, wallHeight);
+        ctx.fillStyle = `rgba(0,0,0,${Math.min(.32, corrected / 28)})`;
+        ctx.fillRect(ray * strip, top, strip + 1, 2);
+      }
 
-        <footer className="controls-panel">
-          <div className="controls-title"><span>DESPLAZAMIENTO</span><small>Usa los controles para explorar</small></div>
-          <div className="d-pad">
-            <button aria-label="Mover arriba" onClick={() => mover('UP')}>▲</button>
-            <button aria-label="Mover izquierda" onClick={() => mover('LEFT')}>◀</button>
-            <div className="d-pad-center">MOVE</div>
-            <button aria-label="Mover derecha" onClick={() => mover('RIGHT')}>▶</button>
-            <button aria-label="Mover abajo" onClick={() => mover('DOWN')}>▼</button>
-          </div>
-        </footer>
-      </div>
-    </div>
-  );
+      // Retícula y leyenda.
+      ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(width / 2 - 8, height / 2); ctx.lineTo(width / 2 + 8, height / 2); ctx.moveTo(width / 2, height / 2 - 8); ctx.lineTo(width / 2, height / 2 + 8); ctx.stroke();
+      ctx.fillStyle = 'rgba(8, 20, 27, .6)'; ctx.fillRect(16, height - 44, 190, 28);
+      ctx.fillStyle = '#f8dfaa'; ctx.font = '11px system-ui'; ctx.fillText('PUEBLO DE LA HABANA · EXPLORACIÓN', 27, height - 26);
+    };
+
+    const move = (delta: number) => {
+      const player = playerRef.current;
+      const keys = keysRef.current;
+      const speed = delta * 2.3;
+      let dx = 0; let dy = 0;
+      if (keys.w || keys.arrowup) { dx += Math.cos(player.angle) * speed; dy += Math.sin(player.angle) * speed; }
+      if (keys.s || keys.arrowdown) { dx -= Math.cos(player.angle) * speed; dy -= Math.sin(player.angle) * speed; }
+      if (keys.a) { dx += Math.cos(player.angle - Math.PI / 2) * speed; dy += Math.sin(player.angle - Math.PI / 2) * speed; }
+      if (keys.d) { dx += Math.cos(player.angle + Math.PI / 2) * speed; dy += Math.sin(player.angle + Math.PI / 2) * speed; }
+      if (keys.arrowleft) player.angle -= delta * 2.2;
+      if (keys.arrowright) player.angle += delta * 2.2;
+      if (!isWall(player.x + dx, player.y)) player.x += dx;
+      if (!isWall(player.x, player.y + dy)) player.y += dy;
+    };
+
+    let last = performance.now(); let frame = 0;
+    const loop = (now: number) => {
+      const delta = Math.min((now - last) / 1000, .05); last = now;
+      move(delta); render();
+      if (++frame % 10 === 0) {
+        setPosition({ x: playerRef.current.x, y: playerRef.current.y });
+        if (Object.values(keysRef.current).some(Boolean)) setEnergy((value) => Math.max(0, value - .08));
+      }
+      requestAnimationFrame(loop);
+    };
+    resize(); window.addEventListener('resize', resize);
+    const animation = requestAnimationFrame(loop);
+    const down = (event: KeyboardEvent) => { keysRef.current[event.key.toLowerCase()] = true; };
+    const up = (event: KeyboardEvent) => { keysRef.current[event.key.toLowerCase()] = false; };
+    window.addEventListener('keydown', down); window.addEventListener('keyup', up);
+    return () => { cancelAnimationFrame(animation); window.removeEventListener('resize', resize); window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+  }, []);
+
+  const hold = (key: string, active: boolean) => { keysRef.current[key] = active; setNotice(active ? 'Caminando por el pueblo...' : 'Explora el pueblo con WASD o las flechas.'); };
+
+  return <div className="game-shell first-person">
+    <header className="game-hud"><div><p className="eyebrow">CUBA // SOBREVIVE</p><h1>Exploración del pueblo</h1></div><div className="hud-right"><span className="online"><i /> EN LÍNEA</span><span>ENERGÍA <b>{Math.floor(energy)}%</b></span></div></header>
+    <main className="viewport-panel"><canvas ref={canvasRef} /><div className="direction">N</div><div className="crosshair-label">PRIMERA PERSONA</div></main>
+    <section className="bottom-hud"><div><span className="eyebrow">POSICIÓN</span><strong>{position.x.toFixed(1)}, {position.y.toFixed(1)}</strong><p>{notice}</p></div><div className="mobile-controls"><button onPointerDown={() => hold('arrowleft', true)} onPointerUp={() => hold('arrowleft', false)} onPointerLeave={() => hold('arrowleft', false)}>◀</button><button onPointerDown={() => hold('w', true)} onPointerUp={() => hold('w', false)} onPointerLeave={() => hold('w', false)}>▲</button><button onPointerDown={() => hold('arrowright', true)} onPointerUp={() => hold('arrowright', false)} onPointerLeave={() => hold('arrowright', false)}>▶</button><button onPointerDown={() => hold('s', true)} onPointerUp={() => hold('s', false)} onPointerLeave={() => hold('s', false)}>▼</button></div><small>WASD / FLECHAS<br />MOVERSE Y GIRAR</small></section>
+  </div>;
+}
+
+function shadeColor(hex: string, amount: number) {
+  const value = hex.replace('#', '');
+  const r = Math.floor(parseInt(value.slice(0, 2), 16) * amount);
+  const g = Math.floor(parseInt(value.slice(2, 4), 16) * amount);
+  const b = Math.floor(parseInt(value.slice(4, 6), 16) * amount);
+  return `rgb(${r}, ${g}, ${b})`;
 }
